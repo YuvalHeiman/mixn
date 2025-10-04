@@ -208,6 +208,7 @@ def _plot_report(
     sr: int,
     change_map: Dict,
     png_path: Path,
+    applied_context: Optional[Dict[str, List[str]]] = None,
 ) -> None:
     try:
         import matplotlib
@@ -223,12 +224,13 @@ def _plot_report(
     x1 = x1[:n]
     t = np.arange(n) / sr
 
-    fig, ax = plt.subplots(1, 1, figsize=(13, 6), constrained_layout=True)
+    # Single overlay plot (cleaner)
+    fig, ax = plt.subplots(1, 1, figsize=(13, 6.5), constrained_layout=True)
 
-    # Plot overlapped waveforms
-    ax.plot(t, x0, color="#444444", linewidth=0.6, label="Before")
+    # Plot overlapped waveforms (thicker, clearer)
+    ax.plot(t, x0, color="#444444", linewidth=1.4, label="Before", zorder=2)
     # Light purple, semi-transparent for After
-    ax.plot(t, x1, color="#b19cd9", alpha=0.6, linewidth=0.8, label="After (processed)")
+    ax.plot(t, x1, color="#b19cd9", alpha=0.65, linewidth=1.8, label="After (processed)", zorder=3)
     ax.set_ylim(-1.05, 1.05)
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Amplitude")
@@ -244,41 +246,80 @@ def _plot_report(
         c = color_map.get(ev.get("type", ""), "#ffbf0f")
         ax.axvspan(float(ev.get("start_sec", 0.0)), float(ev.get("end_sec", 0.0)), color=c, alpha=0.15)
 
-    # Annotate top-N events by magnitude (most negative delta first)
+    # Numbered markers with de-overlap and friendly labels from applied_context
     try:
-        events_sorted = sorted(events, key=lambda e: float(e.get("avg_delta_db", 0.0)))
+        events_sorted_mag = sorted(events, key=lambda e: abs(float(e.get("avg_delta_db", 0.0))), reverse=True)
     except Exception:
-        events_sorted = events
-    topN = events_sorted[:12]
-    y_top = 0.92  # relative position for annotation arrows
+        events_sorted_mag = events
+    topN = events_sorted_mag[:10]
     ylim = ax.get_ylim()
-    y_annot = ylim[0] + (ylim[1] - ylim[0]) * y_top
-    for ev in topN:
+    from collections import defaultdict
+    rel_levels = [0.86, 0.89, 0.92, 0.95, 0.98, 0.83, 0.80]
+    slot_counts: Dict[float, int] = defaultdict(int)
+    index_lines: List[str] = []
+    duration = float(t[-1]) if len(t) else 0.0
+
+    def _friendly_label(ev: Dict) -> str:
+        if not applied_context:
+            base = ev.get("type", "")
+            if ev.get("band"):
+                base += f": {ev['band']}"
+            return base
+        et = str(ev.get("type", ""))
+        if et == "de_esser":
+            for lbl in applied_context.get("vocals", []):
+                if any(k in lbl.lower() for k in ["de-ess", "de ess", "deesser"]):
+                    return f"vocals: {lbl}"
+            return "vocals: De-esser"
+        for lbl in applied_context.get("master", []):
+            if "multiband" in lbl.lower():
+                return f"master: {lbl}"
+        for grp in ["vocals", "drums", "bass", "other"]:
+            labs = applied_context.get(grp, [])
+            if labs:
+                return f"{grp}: {labs[0]}"
+        return ev.get("type", "")
+
+    for idx, ev in enumerate(topN, start=1):
         t0 = float(ev.get("start_sec", 0.0))
         t1 = float(ev.get("end_sec", 0.0))
         tmid = 0.5 * (t0 + t1)
-        label = f"{ev.get('type','')}: {ev.get('band','')} {float(ev.get('avg_delta_db',0.0)):.1f} dB"
-        ax.annotate(
-            label,
-            xy=(tmid, 0.0), xycoords=("data", "data"),
-            xytext=(tmid, y_annot), textcoords=("data", "data"),
-            ha="center", va="bottom",
-            fontsize=8, color="#333333",
-            arrowprops=dict(arrowstyle="-|>", color="#666666", lw=0.8, shrinkA=0, shrinkB=0),
-            bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#888888", alpha=0.8),
+        key = round(tmid, 1)
+        slot = slot_counts[key]
+        slot_counts[key] += 1
+        slot = min(slot, len(rel_levels) - 1)
+        y_mark = ylim[0] + rel_levels[slot] * (ylim[1] - ylim[0])
+        x_off = (slot - (len(rel_levels) - 1) / 2.0) * 0.35  # seconds offset to separate markers
+        x_mark = max(0.0, min(duration, tmid + x_off))
+        c = color_map.get(ev.get("type", ""), "#ffbf0f")
+        ax.text(
+            x_mark,
+            y_mark,
+            str(idx),
+            color=c,
+            fontsize=11,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            bbox=dict(boxstyle="circle,pad=0.24", fc="white", ec=c, lw=1.2, alpha=0.96),
+            zorder=4,
         )
+        friendly = _friendly_label(ev)
+        desc = f"{friendly} — {float(ev.get('avg_delta_db',0.0)):.1f} dB @ {t0:.2f}–{t1:.2f}s"
+        index_lines.append(f"{idx}) {desc}")
 
-    # Legend and explanatory textbox
+    # Removed bottom timeline to declutter
+
+    # Minimal helper text only
     ax.legend(loc="upper left")
-    summ = change_map.get("summary", {})
-    exp_lines = [
-        "Overlay: Before (dark gray), After (light purple, semi-transparent)",
-        f"Events: De-Esser={summ.get('num_deesser_events',0)}, Band changes={summ.get('num_band_events',0)}",
-        "Highlighted spans show where processing reduced energy.",
-        "Arrows label the most significant changes (time and dB).",
-    ]
-    fig.text(0.01, 0.01, "\n".join(exp_lines), fontsize=9, color="#333333",
-             bbox=dict(boxstyle="round,pad=0.35", fc="#f7f7f7", ec="#cccccc"))
+    fig.text(0.01, 0.02, "Shaded = detected changes • Markers 1..N → list at right", fontsize=9, color="#333333",
+             bbox=dict(boxstyle="round,pad=0.28", fc="#f7f7f7", ec="#cccccc"))
+
+    # Numbered index legend on the right
+    if index_lines:
+        right_text = "\n".join(index_lines)
+        fig.text(0.995, 0.5, right_text, fontsize=9, color="#222222", va="center", ha="right",
+                 bbox=dict(boxstyle="round,pad=0.35", fc="#ffffff", ec="#cccccc", alpha=0.9))
 
     png_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(png_path, dpi=150)
@@ -294,6 +335,7 @@ def create_waveform_change_report(
     sibilant_thresh_db: float = 1.5,
     band_thresh_db: float = 1.0,
     min_event_ms: float = 30.0,
+    applied_context: Optional[Dict[str, List[str]]] = None,
 ) -> Tuple[Dict, Path, Path]:
     """Generate a waveform PNG and a JSON change dictionary next to the output audio.
 
@@ -314,7 +356,7 @@ def create_waveform_change_report(
     png_path = parent / f"{stem}_waveform_report.png"
     json_path = parent / f"{stem}_changes.json"
 
-    _plot_report(before, after, sr, change_map, png_path)
+    _plot_report(before, after, sr, change_map, png_path, applied_context=applied_context)
     _save_json(change_map, json_path)
 
     return change_map, png_path, json_path

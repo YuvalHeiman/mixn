@@ -380,6 +380,22 @@ def run_once() -> None:
 
     # Waveform change report (before vs after)
     try:
+        # Build applied context from the selections to enrich the PNG annotations
+        applied_context: Dict[str, List[str]] = {}
+        for grp in ["vocals", "drums", "bass", "other"]:
+            opt = selections.get(grp)
+            labels: List[str] = []
+            if isinstance(opt, list):
+                labels = [o.label for o in opt]
+            elif isinstance(opt, AdjustOption):
+                labels = [opt.label]
+            if labels:
+                applied_context[grp] = labels
+
+        master_opts = selections.get("master", [])
+        if isinstance(master_opts, list) and master_opts:
+            applied_context["master"] = [o.label for o in master_opts]
+
         change_map, png_path, json_path = create_waveform_change_report(
             before=y,
             after=mix,
@@ -387,6 +403,7 @@ def run_once() -> None:
             out_audio_path=out_path,
             sibilant_thresh_db=0.6,
             band_thresh_db=0.4,
+            applied_context=applied_context if applied_context else None,
         )
 
         # Summary panel
