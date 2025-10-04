@@ -1,0 +1,32 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.egg-info/
+.venv/
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Application data (keep folders, ignore content)
+input_audio/*
+!input_audio/.gitkeep
+output_audio/*
+!output_audio/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Tests / coverage
+.pytest_cache/
+.coverage
+htmlcov/

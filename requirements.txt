@@ -1,0 +1,12 @@
+ # Core numerical and signal processing (NumPy 2.x compatible)
+numpy>=2.0,<3.0
+scipy>=1.14,<2.0
+
+# Audio I/O
+soundfile>=0.12,<1.0
+
+# Terminal UI
+rich>=13.7,<14.0
+
+# Optional loudness normalization (LUFS)
+pyloudnorm>=0.1.1,<0.2
