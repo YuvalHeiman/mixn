@@ -9,7 +9,14 @@ from dataclasses import dataclass
 from typing import Dict, List, Literal, Optional, Tuple
 
 StemName = Literal["vocals", "drums", "bass", "other"]
-AdjustmentCategory = Literal["eq", "compression", "limiting", "normalization"]
+AdjustmentCategory = Literal[
+    "eq",
+    "compression",
+    "limiting",
+    "normalization",
+    "deesser",
+    "multiband",
+]
 
 
 @dataclass
@@ -26,7 +33,7 @@ class AdjustOption:
     id: str
     label: str
     category: AdjustmentCategory
-    params: Dict[str, float | int | str]
+    params: Dict[str, object]
 
 
 @dataclass

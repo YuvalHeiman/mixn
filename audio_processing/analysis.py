@@ -108,6 +108,14 @@ def compute_metrics(stems: Dict[StemName, np.ndarray], sr: int) -> Dict[str, Dic
             "crest_db": _crest_factor_db(mono),
             "centroid_hz": _spectral_centroid_hz(mono, sr),
         }
+        # Extra metric: sibilant band energy relative to full-band (vocals focus)
+        if name == "vocals":
+            full_rms = _rms(mono)
+            sib = dsp.bandpass(mono, sr, low_hz=5000.0, high_hz=10000.0, order=4)
+            sib_rms = _rms(sib)
+            # ratio dB: band vs full; higher (less negative) means more prominent sibilance
+            ratio_db = 20.0 * np.log10((sib_rms + 1e-12) / (full_rms + 1e-12))
+            metrics[name]["sibilant_ratio_db"] = float(ratio_db)
     return metrics
 
 
@@ -136,6 +144,17 @@ def generate_suggestions(stems_metrics: Dict[str, Dict[str, float]], sr: int, mi
                 label="Reduce harshness (EQ -2 dB @ 6 kHz)",
                 category="eq",
                 params={"type": "peak", "freq": 6000.0, "gain_db": -2.0, "q": 1.0},
+            )
+        )
+    # Conditionally suggest De-Esser if sibilant band is prominent
+    sib_ratio = stems_metrics.get("vocals", {}).get("sibilant_ratio_db", -99.0)
+    if sib_ratio > -12.0:  # threshold for noticeable sibilance
+        suggestions["vocals"].append(
+            AdjustOption(
+                id="vocals_deesser",
+                label="De-ess sibilance (5–10 kHz)",
+                category="deesser",
+                params={"freq_range": [5000.0, 10000.0], "threshold_db": -20.0, "ratio": 4.0, "attack_ms": 5.0, "release_ms": 60.0, "lookahead_ms": 2.0},
             )
         )
     suggestions["vocals"].append(
@@ -205,6 +224,15 @@ def generate_suggestions(stems_metrics: Dict[str, Dict[str, float]], sr: int, mi
 
     # Master bus suggestions
     master_opts: List[AdjustOption] = []
+    # Add Multiband processor option by default (user can select it in manual mode; auto applies in A mode)
+    master_opts.append(
+        AdjustOption(
+            id="master_multiband",
+            label="Multiband compression (5-band)",
+            category="multiband",
+            params={"mode": "compressor", "filter_order": 4},
+        )
+    )
     if mix_lufs is None or mix_lufs < -16.0:
         master_opts.append(
             AdjustOption(

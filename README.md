@@ -73,6 +73,65 @@ brew install ffmpeg
 - `dsp.apply_master_options()`: Applies normalization (if available) and limiting.
 - `io_utils`: Handles directory creation, file listing, loading with native SR, saving WAV output.
 
+### New DSP Modules
+
+- **DeEsser**: Detects sibilant energy (≈5–10 kHz) via STFT and applies frequency-selective gain reduction with attack/release and optional lookahead. Supports stereo-linked or per-channel processing and a "listen" mode to solo the affected band.
+- **MultiBandProcessor**: Splits the signal into bands using Butterworth filters, applies per-band dynamics in two modes:
+  - `mode="compressor"`: classic downward compression plus optional make-up gain.
+  - `mode="dynamic_eq"`: adaptive gain per band, combining downward reduction above threshold and optional upward lift below threshold.
+
+Import path:
+
+```python
+from audio_processing.dsp import DeEsser, MultiBandProcessor
+```
+
+### Example Script
+
+Run the example pipeline (De-Esser ➜ Multiband):
+
+```bash
+python examples/process_audio.py --input input_audio/your.wav --config configs/example_config.json
+```
+
+If `--input` is omitted, the first file in `input_audio/` is used. Output is written to `output_audio/<name>_processed.wav`.
+
+### JSON Configuration
+
+Schema: `configs/dsp_config.schema.json`
+
+Example: `configs/example_config.json`
+
+```json
+{
+  "deesser": {"freq_range": [5000, 10000], "threshold_db": -20, "ratio": 4, "attack_ms": 5, "release_ms": 60, "lookahead_ms": 2},
+  "multiband": {
+    "mode": "compressor",
+    "filter_order": 4,
+    "bands": [
+      {"low_hz": 20, "high_hz": 120,  "threshold_db": -30, "ratio": 2.0, "attack_ms": 15, "release_ms": 150, "makeup_db": 0.0},
+      {"low_hz": 120, "high_hz": 500,  "threshold_db": -28, "ratio": 2.0, "attack_ms": 15, "release_ms": 150, "makeup_db": 0.0},
+      {"low_hz": 500, "high_hz": 2000, "threshold_db": -24, "ratio": 2.0, "attack_ms": 10, "release_ms": 120, "makeup_db": 0.0},
+      {"low_hz": 2000, "high_hz": 6000, "threshold_db": -24, "ratio": 2.5, "attack_ms": 8,  "release_ms": 100, "makeup_db": 0.0},
+      {"low_hz": 6000, "high_hz": 20000,"threshold_db": -26, "ratio": 3.0, "attack_ms": 5,  "release_ms": 80,  "makeup_db": 0.0}
+    ]
+  }
+}
+```
+
+### Testing
+
+Unit tests cover:
+- **De-Esser** reduces energy in 5–10 kHz on synthetic sibilant bursts.
+- **Multiband Compressor** reduces dynamic variation in a target band.
+- **Dynamic EQ** can apply upward lift when below threshold.
+
+Run tests:
+
+```bash
+pytest -q
+```
+
 ## Limitations & Expectations
 - Stem separation is heuristic for demonstration, not studio-grade source separation.
 - DSP is intentionally simple and educational.

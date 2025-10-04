@@ -67,6 +67,7 @@ from audio_processing.io_utils import (
 )
 from audio_processing.analysis import analyze_audio
 from audio_processing.dsp import apply_option_to_stem, apply_master_options
+from audio_processing.visualization import create_waveform_change_report
 from audio_processing.types import AdjustOption, AnalysisResult
 
 console = Console()
@@ -221,32 +222,21 @@ def select_single_option(group: str, options: List[AdjustOption]) -> Optional[Ad
 
 
 def select_master_options(options: List[AdjustOption]) -> List[AdjustOption]:
-    """Offer normalization and limiter separately (one-by-one)."""
-    picks: List[AdjustOption] = []
-    norm_opts = [o for o in options if o.category == "normalization"]
-    lim_opts = [o for o in options if o.category == "limiting"]
-
-    norm_choice = select_single_option("master (normalization)", norm_opts)
-    if isinstance(norm_choice, AdjustOption):
-        picks.append(norm_choice)
-    elif isinstance(norm_choice, list):
-        picks.extend(norm_choice)
-
-    lim_choice = select_single_option("master (limiting)", lim_opts)
-    if isinstance(lim_choice, AdjustOption):
-        picks.append(lim_choice)
-    elif isinstance(lim_choice, list):
-        picks.extend(lim_choice)
-
-    return picks
+    """Offer all master options together (e.g., multiband, normalization, limiter)."""
+    choice = select_single_option("master", options)
+    if isinstance(choice, list):
+        return choice
+    elif isinstance(choice, AdjustOption):
+        return [choice]
+    return []
 
 
 def choose_mode() -> str:
-    """Ask the user whether to run automatic or manual mixing after analysis."""
+    """Ask the user to apply all suggestions or manually select them."""
     console.print(Panel("Choose mode", border_style="cyan"))
-    console.print("  [cyan]A[/cyan]) Automatic mix/master")
-    console.print("  [cyan]M[/cyan]) Manual selection")
-    sel = Prompt.ask("Mode", choices=["A", "M"], default="M")
+    console.print("  [cyan]A[/cyan]) Apply all suggested")
+    console.print("  [cyan]B[/cyan]) Select which adjustments to apply")
+    sel = Prompt.ask("Mode", choices=["A", "B"], default="B")
     return sel
 
 
@@ -340,6 +330,8 @@ def process_with_progress(result: AnalysisResult, selections: Dict[str, Optional
     master_opts = selections.get("master", [])
     if isinstance(master_opts, list) and master_opts:
         console.print("Applying master bus processing...")
+        for o in master_opts:
+            console.print(f"  - {o.label}")
         mix = apply_master_options(mix, sr, master_opts)
         console.print("Master bus done.")
 
@@ -385,8 +377,57 @@ def run_once() -> None:
     # Save
     out_path = build_output_path(Path(result.file_path))
     save_audio(out_path, mix, result.sr)
-    console.print(Panel(f"Success! Saved mastered file to:\n[bold green]{out_path}[/bold green]",
-                        title="Done", border_style="green"))
+
+    # Waveform change report (before vs after)
+    try:
+        change_map, png_path, json_path = create_waveform_change_report(
+            before=y,
+            after=mix,
+            sr=result.sr,
+            out_audio_path=out_path,
+            sibilant_thresh_db=0.6,
+            band_thresh_db=0.4,
+        )
+
+        # Summary panel
+        summ = change_map.get("summary", {})
+        png_line = f"Waveform report: [cyan]{png_path}[/cyan]" if png_path.exists() else (
+            "Waveform report: not created (install matplotlib to enable plotting)."
+        )
+        msg = (
+            f"Saved mastered file to\n[bold green]{out_path}[/bold green]\n\n"
+            f"{png_line}\n"
+            f"Change details: [cyan]{json_path}[/cyan]\n\n"
+            f"Events — De-Esser: [bold]{summ.get('num_deesser_events', 0)}[/bold], "
+            f"Per-band changes: [bold]{summ.get('num_band_events', 0)}[/bold]"
+        )
+        console.print(Panel(msg, title="Done", border_style="green"))
+
+        # Show top few events inline
+        events = change_map.get("events", [])
+        if events:
+            t = Table(title="Change Events (top 10)")
+            t.add_column("Type", style="magenta")
+            t.add_column("Band", style="cyan")
+            t.add_column("Start (s)", justify="right")
+            t.add_column("End (s)", justify="right")
+            t.add_column("Delta dB", justify="right")
+            # Sort by magnitude of change (most negative first)
+            events_sorted = sorted(events, key=lambda e: e.get("avg_delta_db", 0.0))[:10]
+            for ev in events_sorted:
+                t.add_row(
+                    str(ev.get("type", "")),
+                    str(ev.get("band", "")),
+                    f"{float(ev.get('start_sec', 0.0)):.3f}",
+                    f"{float(ev.get('end_sec', 0.0)):.3f}",
+                    f"{float(ev.get('avg_delta_db', 0.0)):.2f}",
+                )
+            console.print(t)
+    except Exception as e:
+        console.print(Panel(f"Saved mastered file to\n[bold green]{out_path}[/bold green]\n\n"
+                            f"[yellow]Note[/yellow]: Failed to generate waveform report: {e}\n"
+                            f"Install matplotlib to enable plotting: pip install matplotlib",
+                            title="Done", border_style="green"))
 
 
 def main() -> None:

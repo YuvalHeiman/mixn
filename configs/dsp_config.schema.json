@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DSP Config Schema",
+  "type": "object",
+  "properties": {
+    "deesser": {
+      "type": "object",
+      "properties": {
+        "freq_range": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 20 },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[low_hz, high_hz]"
+        },
+        "threshold_db": { "type": "number", "minimum": -80, "maximum": 0 },
+        "ratio": { "type": "number", "minimum": 1, "maximum": 20 },
+        "attack_ms": { "type": "number", "minimum": 0, "maximum": 200 },
+        "release_ms": { "type": "number", "minimum": 0, "maximum": 1000 },
+        "lookahead_ms": { "type": "number", "minimum": 0, "maximum": 20 },
+        "listen": { "type": "boolean" },
+        "stereo_link": { "type": "boolean" },
+        "n_fft": { "type": "integer", "minimum": 256, "maximum": 8192 },
+        "hop_length": { "type": ["integer", "null"], "minimum": 1 },
+        "win_length": { "type": ["integer", "null"], "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "multiband": {
+      "type": "object",
+      "properties": {
+        "mode": { "type": "string", "enum": ["compressor", "dynamic_eq"] },
+        "filter_order": { "type": "integer", "minimum": 2, "maximum": 10 },
+        "bands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "low_hz": { "type": ["number", "null"], "minimum": 20 },
+              "high_hz": { "type": ["number", "null"], "minimum": 20 },
+              "threshold_db": { "type": "number", "minimum": -80, "maximum": 0 },
+              "ratio": { "type": "number", "minimum": 1, "maximum": 20 },
+              "attack_ms": { "type": "number", "minimum": 0, "maximum": 200 },
+              "release_ms": { "type": "number", "minimum": 0, "maximum": 1000 },
+              "makeup_db": { "type": "number", "minimum": -24, "maximum": 24 },
+              "upward_max_boost_db": { "type": "number", "minimum": 0, "maximum": 12 },
+              "upward_ratio": { "type": "number", "minimum": 1, "maximum": 20 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
